@@ -1,0 +1,19 @@
+# Astro Runtime includes the following pre-installed providers packages: https://www.astronomer.io/docs/astro/runtime-image-architecture#provider-packages
+# ML libraries
+lightgbm==4.1.0
+scikit-learn==1.3.2
+pandas==2.1.4
+numpy==1.26.2
+joblib==1.3.2
+
+# MLOps tools
+mlflow==2.9.2
+optuna==3.5.0
+#shap==0.44.0
+
+# Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# Airflow providers (optional)
+apache-airflow-providers-docker

@@ -1,0 +1,18 @@
+{
+  "auc_roc": 0.7725859715521831,
+  "recall": 0.030211480362537766,
+  "precision": 0.5474452554744526,
+  "f1_score": 0.057262836419163965,
+  "trained_at": "2025-12-08T16:01:10.023190",
+  "best_params": {
+    "num_leaves": 88,
+    "max_depth": 10,
+    "learning_rate": 0.023705402696140656,
+    "n_estimators": 1095,
+    "min_child_samples": 70,
+    "subsample": 0.6006763791297195,
+    "colsample_bytree": 0.515452426964993,
+    "reg_alpha": 4.400061132215058,
+    "reg_lambda": 0.06431007225884393
+  }
+}

@@ -1,0 +1,19 @@
+version: "3.1"
+services:
+  scheduler:
+    volumes:
+      - ./data:/usr/local/airflow/data
+      - ./outputs:/usr/local/airflow/outputs
+      - ./models:/usr/local/airflow/models
+  
+  webserver:
+    volumes:
+      - ./data:/usr/local/airflow/data
+      - ./outputs:/usr/local/airflow/outputs
+      - ./models:/usr/local/airflow/models
+  
+  triggerer:
+    volumes:
+      - ./data:/usr/local/airflow/data
+      - ./outputs:/usr/local/airflow/outputs
+      - ./models:/usr/local/airflow/models

@@ -1,0 +1,5 @@
+outs:
+- md5: b643a18a11c65d52f4b588b62b6634a6
+  size: 3671
+  hash: md5
+  path: numeric_imputer.pkl

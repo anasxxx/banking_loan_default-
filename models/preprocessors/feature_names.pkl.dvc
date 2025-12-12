@@ -1,0 +1,5 @@
+outs:
+- md5: 9e47c66dde1495772db76c6964980cd9
+  size: 3219
+  hash: md5
+  path: feature_names.pkl

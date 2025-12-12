@@ -1,0 +1,5 @@
+outs:
+- md5: 5b7e2de7750718ebe1bfa6bf5aed4fae
+  size: 6827684
+  hash: md5
+  path: lightgbm_final_proper_split.pkl
