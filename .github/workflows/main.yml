@@ -8,7 +8,7 @@
             docker stop loan-api || true
             docker rm loan-api || true
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
-            docker run -d -p 8000:8000 \
+            docker run -d -p 8000:8000 -v ~/banking_loan_default-/models:/app/models --name loan-api ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
               -v ~/banking_loan_default-/models:/app/models \
               --name loan-api ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
             docker image prune -f
