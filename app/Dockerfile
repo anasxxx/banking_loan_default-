@@ -20,14 +20,13 @@ RUN pip install --no-cache-dir \
     python-multipart==0.0.6 \
     requests==2.31.0
 
-# Copy app files from app/ directory
+# Copy application code
 COPY app/main.py .
 COPY app/config.py .
 COPY app/schemas.py .
 COPY app/__init__.py .
 
-# Copy model
-COPY models/production/lightgbm_full_optimized.pkl models/production/
+# DON'T copy model - it will be mounted from EC2
 
 EXPOSE 8000
 
