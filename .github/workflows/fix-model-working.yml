@@ -37,48 +37,31 @@ jobs:
             exit 1
           fi
       
-      - name: Upload model file to EC2
-        uses: appleboy/scp-action@master
-        continue-on-error: false
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          source: "models/production/lightgbm_smote_high_performance.pkl"
-          target: "~/models/production/"
-          rm: false
-          strip_components: 0
-          overwrite: true
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
       
-      - name: Verify model file uploaded
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            if [ -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
-              echo "✓ Model file successfully uploaded!"
-              ls -lh ~/models/production/lightgbm_smote_high_performance.pkl
-            else
-              echo "✗ ERROR: Model file upload failed!"
-              exit 1
-            fi
-      
-      - name: Upload remaining files
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          source: "models/production/metrics_smote_high_performance.json,models/production/optimal_threshold_smote.json,models/production/feature_names.json"
-          target: "~/models/production/"
-          rm: false
-          strip_components: 0
-          overwrite: true
+      - name: Upload all model files using SCP
+        run: |
+          echo "Uploading model files to EC2..."
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p ~/models/production"
+          
+          echo "Uploading model file (52MB)..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/lightgbm_smote_high_performance.pkl ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || { echo "Model file upload failed!"; exit 1; }
+          
+          echo "Uploading metrics file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/metrics_smote_high_performance.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || { echo "Metrics file upload failed!"; exit 1; }
+          
+          echo "Uploading threshold file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/optimal_threshold_smote.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || { echo "Threshold file upload failed!"; exit 1; }
+          
+          echo "Uploading feature names file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/feature_names.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || { echo "Feature names file upload failed!"; exit 1; }
+          
+          echo "All files uploaded successfully!"
       
       - name: Verify all files uploaded
         uses: appleboy/ssh-action@master
@@ -88,19 +71,51 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
+            echo "=========================================="
             echo "Verifying all uploaded files..."
+            echo "=========================================="
             echo "Files in ~/models/production/:"
             ls -lah ~/models/production/
             
+            echo ""
+            echo "Checking each file:"
             missing=0
-            [ -f ~/models/production/lightgbm_smote_high_performance.pkl ] && echo "✓ Model file exists" || { echo "✗ Model file missing"; missing=1; }
-            [ -f ~/models/production/metrics_smote_high_performance.json ] && echo "✓ Metrics file exists" || { echo "✗ Metrics file missing"; missing=1; }
-            [ -f ~/models/production/optimal_threshold_smote.json ] && echo "✓ Threshold file exists" || { echo "✗ Threshold file missing"; missing=1; }
-            [ -f ~/models/production/feature_names.json ] && echo "✓ Feature names file exists" || { echo "✗ Feature names file missing"; missing=1; }
+            
+            if [ -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
+              echo "✓ Model file exists: $(ls -lh ~/models/production/lightgbm_smote_high_performance.pkl | awk '{print $5, $9}')"
+            else
+              echo "✗ Model file missing!"
+              missing=1
+            fi
+            
+            if [ -f ~/models/production/metrics_smote_high_performance.json ]; then
+              echo "✓ Metrics file exists"
+            else
+              echo "✗ Metrics file missing!"
+              missing=1
+            fi
+            
+            if [ -f ~/models/production/optimal_threshold_smote.json ]; then
+              echo "✓ Threshold file exists"
+            else
+              echo "✗ Threshold file missing!"
+              missing=1
+            fi
+            
+            if [ -f ~/models/production/feature_names.json ]; then
+              echo "✓ Feature names file exists"
+            else
+              echo "✗ Feature names file missing!"
+              missing=1
+            fi
             
             if [ $missing -eq 1 ]; then
+              echo ""
               echo "ERROR: Some files are missing!"
               exit 1
+            else
+              echo ""
+              echo "✓ All files verified successfully!"
             fi
       
       - name: Fix permissions and restart container
