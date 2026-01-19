@@ -1,0 +1,26 @@
+{
+  "auc_roc": 0.916,
+  "precision": 0.874,
+  "recall": 0.9217,
+  "f1_score": 0.90,
+  "optimal_threshold": 0.03,
+  "n_features": 343,
+  "n_samples_train": 246008,
+  "n_samples_train_smote": 452296,
+  "n_samples_test": 61503,
+  "optuna_trials": 30,
+  "all_targets_met": true,
+  "trained_at": "2026-01-19T17:15:55.030696",
+  "best_params": {
+    "num_leaves": 264,
+    "max_depth": 13,
+    "learning_rate": 0.008368263370457658,
+    "n_estimators": 1800,
+    "min_child_samples": 192,
+    "subsample": 0.90131581646526,
+    "colsample_bytree": 0.4610651842379096,
+    "reg_alpha": 0.015585602374962596,
+    "reg_lambda": 5.2345519050333063e-05
+  },
+  "method": "smote_oversampling"
+}
