@@ -184,47 +184,65 @@ jobs:
             
             echo ""
             echo "=========================================="
-            echo "STEP 4: Start new container"
+            echo "STEP 4: Get absolute paths"
+            echo "=========================================="
+            MODELS_ABS=$(cd ~/models && pwd)
+            DATA_ABS=$(cd ~/data 2>/dev/null && pwd || echo "/tmp")
+            echo "Models absolute path: $MODELS_ABS"
+            echo "Data absolute path: $DATA_ABS"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 5: Start new container with ABSOLUTE paths"
             echo "=========================================="
             docker run -d -p 8000:8000 \
-              -v ~/models:/app/models \
-              -v ~/data:/app/data \
+              -v $MODELS_ABS:/app/models:ro \
+              -v $DATA_ABS:/app/data:ro \
               --name loan-api \
               --restart unless-stopped \
               ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
             
             echo ""
             echo "=========================================="
-            echo "STEP 5: Wait for container to start"
+            echo "STEP 6: Wait for container to start"
             echo "=========================================="
             sleep 30
             
             echo ""
             echo "=========================================="
-            echo "STEP 6: Check container status"
+            echo "STEP 7: Check container status"
             echo "=========================================="
             docker ps | grep loan-api || echo "Container not running!"
             
             echo ""
             echo "=========================================="
-            echo "STEP 7: Check container logs"
+            echo "STEP 8: Check container logs (FULL)"
             echo "=========================================="
-            docker logs loan-api --tail 100
+            docker logs loan-api 2>&1 | tail -100
             
             echo ""
             echo "=========================================="
-            echo "STEP 8: Verify file in container"
+            echo "STEP 9: Verify file in container"
             echo "=========================================="
             docker exec loan-api ls -la /app/models/production/ 2>&1 || echo "Cannot access container"
             docker exec loan-api test -f /app/models/production/lightgbm_smote_high_performance.pkl && echo "✓ Model file accessible in container" || echo "✗ Model file NOT accessible in container"
             
             echo ""
             echo "=========================================="
-            echo "STEP 9: Test API endpoints"
+            echo "STEP 10: Check Python can load model"
+            echo "=========================================="
+            docker exec loan-api python -c "import os; path='models/production/lightgbm_smote_high_performance.pkl'; print(f'File exists: {os.path.exists(path)}'); print(f'Absolute: {os.path.abspath(path)}')" 2>&1 || echo "Cannot test Python"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 11: Test API endpoints"
             echo "=========================================="
             sleep 5
-            curl -v http://localhost:8000/health 2>&1 || echo "Health check failed"
-            curl -v http://localhost:8000/model/info 2>&1 || echo "Model info check failed"
+            echo "Health check:"
+            curl -s http://localhost:8000/health | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/health
+            echo ""
+            echo "Model info:"
+            curl -s http://localhost:8000/model/info | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/model/info
             
             echo ""
             echo "=========================================="
