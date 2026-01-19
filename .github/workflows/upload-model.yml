@@ -1,0 +1,59 @@
+name: Upload Model to EC2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'models/production/*.pkl'
+      - 'models/production/*.json'
+    branches:
+      - main
+
+jobs:
+  upload-model:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Upload model files to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "models/production/lightgbm_smote_high_performance.pkl,models/production/metrics_smote_high_performance.json,models/production/optimal_threshold_smote.json,models/production/feature_names.json"
+          target: "~/models/production/"
+          rm: false
+      
+      - name: Set permissions and restart container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Setting permissions..."
+            chmod -R 755 ~/models/production/
+            
+            echo "Verifying files..."
+            ls -lh ~/models/production/ | grep -E "(lightgbm_smote|metrics_smote|optimal_threshold_smote|feature_names)"
+            
+            echo "Restarting container..."
+            docker restart loan-api || docker start loan-api
+            
+            echo "Waiting for container to start..."
+            sleep 10
+            
+            echo "Checking container status..."
+            docker ps | grep loan-api
+            
+            echo "Checking container logs..."
+            docker logs loan-api --tail 30
+            
+            echo "Testing API health..."
+            curl -f http://localhost:8000/health || echo "API may still be starting..."
+            
+            echo "Testing model info..."
+            curl -f http://localhost:8000/model/info || echo "Model may still be loading..."
