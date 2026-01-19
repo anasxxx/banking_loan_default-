@@ -1,0 +1,130 @@
+name: Fix Model Loading - Immediate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-model:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          lfs: true
+      
+      - name: Upload model files to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "models/production/lightgbm_smote_high_performance.pkl,models/production/metrics_smote_high_performance.json,models/production/optimal_threshold_smote.json,models/production/feature_names.json"
+          target: "~/models/production/"
+          rm: false
+          strip_components: 0
+          overwrite: true
+      
+      - name: Fix permissions and restart container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=========================================="
+            echo "STEP 1: Create directory if needed"
+            echo "=========================================="
+            mkdir -p ~/models/production
+            chmod -R 755 ~/models
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 2: Verify files exist"
+            echo "=========================================="
+            ls -lh ~/models/production/ || echo "Directory empty or doesn't exist"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 3: Check container status"
+            echo "=========================================="
+            docker ps -a | grep loan-api || echo "Container not found"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 4: Stop and remove old container"
+            echo "=========================================="
+            docker stop loan-api 2>&1 || echo "Container not running"
+            docker rm loan-api 2>&1 || echo "Container not found"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 5: Verify model files before restart"
+            echo "=========================================="
+            echo "Files in ~/models/production/:"
+            ls -lh ~/models/production/ | grep -E "(lightgbm_smote|metrics_smote|optimal_threshold_smote|feature_names)" || echo "WARNING: Model files not found!"
+            
+            if [ -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
+              echo "✓ Model file exists: $(ls -lh ~/models/production/lightgbm_smote_high_performance.pkl)"
+            else
+              echo "✗ ERROR: Model file NOT FOUND!"
+            fi
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 6: Start container with volume mount"
+            echo "=========================================="
+            docker run -d -p 8000:8000 \
+              -v ~/models:/app/models \
+              -v ~/data:/app/data \
+              --name loan-api \
+              --restart unless-stopped \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest || echo "Failed to start container"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 7: Wait for container to start"
+            echo "=========================================="
+            sleep 20
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 8: Check container status"
+            echo "=========================================="
+            docker ps | grep loan-api
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 9: Check container logs"
+            echo "=========================================="
+            docker logs loan-api --tail 50
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 10: Verify volume mount inside container"
+            echo "=========================================="
+            docker exec loan-api ls -la /app/models/production/ 2>&1 || echo "Cannot exec into container"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 11: Check if model file accessible in container"
+            echo "=========================================="
+            docker exec loan-api test -f /app/models/production/lightgbm_smote_high_performance.pkl && echo "✓ Model file accessible in container" || echo "✗ Model file NOT accessible in container"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 12: Test API health"
+            echo "=========================================="
+            sleep 5
+            curl -v http://localhost:8000/health 2>&1 || echo "API health check failed"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 13: Test model info"
+            echo "=========================================="
+            curl -v http://localhost:8000/model/info 2>&1 || echo "Model info check failed"
+            
+            echo ""
+            echo "=========================================="
+            echo "FIX COMPLETE"
+            echo "=========================================="
