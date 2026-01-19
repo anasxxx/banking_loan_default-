@@ -52,10 +52,8 @@ monitoring/
 tests/
 *.sh
 
-# Exclude all Python files EXCEPT app/*.py
+# Exclude Python files but include app/*.py
 *.py
-!app/
-app/**/*.py
 !app/*.py
 
 # Misc
