@@ -159,10 +159,28 @@ jobs:
             
             echo ""
             echo "=========================================="
-            echo "STEP 3: Stop and remove old container"
+            echo "STEP 3: Stop and remove ALL old containers"
             echo "=========================================="
-            docker stop loan-api 2>&1 || echo "Container not running"
-            docker rm loan-api 2>&1 || echo "Container not found"
+            # Stop all loan-api containers
+            docker stop loan-api 2>&1 || echo "No container to stop"
+            sleep 2
+            
+            # Force remove all loan-api containers (running or stopped)
+            docker rm -f loan-api 2>&1 || echo "No container to remove"
+            sleep 2
+            
+            # Make absolutely sure - remove by name pattern if needed
+            if docker ps -a | grep -q loan-api; then
+              echo "Force removing all remaining loan-api containers..."
+              docker rm -f $(docker ps -a | grep loan-api | awk '{print $1}') 2>&1 || true
+              sleep 2
+            fi
+            
+            # Verify no containers are running on port 8000
+            if docker ps | grep -q ':8000'; then
+              echo "Warning: Another container is using port 8000"
+              docker ps | grep ':8000'
+            fi
             
             echo ""
             echo "=========================================="
