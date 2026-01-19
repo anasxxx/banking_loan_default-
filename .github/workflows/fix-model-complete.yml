@@ -1,0 +1,164 @@
+name: Fix Model Loading - Complete Solution
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  fix-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          lfs: true
+          fetch-depth: 0
+      
+      - name: Verify model files exist
+        run: |
+          echo "Checking repository files..."
+          ls -lh models/production/lightgbm_smote_high_performance.pkl || exit 1
+          ls -lh models/production/*smote*.json || exit 1
+          ls -lh models/production/feature_names.json || exit 1
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      
+      - name: Upload all model files using SCP
+        run: |
+          echo "Creating directory on EC2..."
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p ~/models/production && chmod -R 755 ~/models"
+          
+          echo "Uploading model file (52MB) - this may take a moment..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no -v models/production/lightgbm_smote_high_performance.pkl ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || { echo "Model file upload failed!"; exit 1; }
+          
+          echo "Uploading metrics file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/metrics_smote_high_performance.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || exit 1
+          
+          echo "Uploading threshold file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/optimal_threshold_smote.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || exit 1
+          
+          echo "Uploading feature names file..."
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/feature_names.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/ || exit 1
+          
+          echo "✓ All files uploaded successfully!"
+      
+      - name: Verify uploads and fix container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "=========================================="
+            echo "STEP 1: Verify files on EC2"
+            echo "=========================================="
+            ls -lah ~/models/production/
+            
+            if [ ! -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
+              echo "✗ ERROR: Model file NOT FOUND on EC2!"
+              exit 1
+            fi
+            
+            echo "✓ Model file exists: $(ls -lh ~/models/production/lightgbm_smote_high_performance.pkl)"
+            chmod -R 755 ~/models/production/
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 2: Check current container status"
+            echo "=========================================="
+            docker ps -a | grep loan-api || echo "No container found"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 3: Check volume mount if container exists"
+            echo "=========================================="
+            if docker ps | grep -q loan-api; then
+              docker inspect loan-api | grep -A 10 "Mounts" || echo "Cannot inspect container"
+            fi
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 4: Stop and remove container completely"
+            echo "=========================================="
+            docker stop loan-api 2>&1 || echo "Container not running"
+            docker rm loan-api 2>&1 || echo "Container not found"
+            sleep 2
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 5: Start new container with ABSOLUTE paths"
+            echo "=========================================="
+            MODELS_PATH=$(readlink -f ~/models || echo "$HOME/models")
+            echo "Using models path: $MODELS_PATH"
+            
+            docker run -d -p 8000:8000 \
+              -v $MODELS_PATH:/app/models \
+              -v ~/data:/app/data \
+              --name loan-api \
+              --restart unless-stopped \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest || {
+                echo "Failed to start container with ~/models, trying absolute path..."
+                docker run -d -p 8000:8000 \
+                  -v /home/$USER/models:/app/models \
+                  -v ~/data:/app/data \
+                  --name loan-api \
+                  --restart unless-stopped \
+                  ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+              }
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 6: Wait for container to fully start"
+            echo "=========================================="
+            sleep 30
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 7: Check container status"
+            echo "=========================================="
+            docker ps | grep loan-api || echo "Container not running!"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 8: Check container logs (FULL)"
+            echo "=========================================="
+            docker logs loan-api 2>&1 || echo "Cannot get logs"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 9: Verify files accessible in container"
+            echo "=========================================="
+            docker exec loan-api ls -la /app/models/production/ 2>&1 || echo "Cannot exec into container"
+            docker exec loan-api test -f /app/models/production/lightgbm_smote_high_performance.pkl && echo "✓ Model file accessible" || echo "✗ Model file NOT accessible"
+            docker exec loan-api pwd 2>&1 || echo "Cannot exec"
+            docker exec loan-api ls -la /app/ 2>&1 || echo "Cannot exec"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 10: Test if model can be loaded"
+            echo "=========================================="
+            docker exec loan-api python -c "import os; print('Model path:', os.path.abspath('models/production/lightgbm_smote_high_performance.pkl')); print('File exists:', os.path.exists('models/production/lightgbm_smote_high_performance.pkl'))" 2>&1 || echo "Cannot test in container"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 11: Test API endpoints"
+            echo "=========================================="
+            sleep 5
+            curl -v http://localhost:8000/health 2>&1 || echo "Health check failed"
+            curl -v http://localhost:8000/model/info 2>&1 || echo "Model info check failed"
+            
+            echo ""
+            echo "=========================================="
+            echo "FIX COMPLETE - CHECK LOGS ABOVE"
+            echo "=========================================="
