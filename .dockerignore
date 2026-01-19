@@ -1,23 +1,80 @@
-astro
+# Git
 .git
-.env
-airflow_settings.yaml
-logs/
-.venv
-airflow.db
-airflow.cfg
-data/
-venv/
-__pycache__/
+.gitignore
+
+# Python
+__pycache__
 *.pyc
-.git/
-.dvc/
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+*.egg-info
+
+# Data files
+data/
+*.csv
+*.parquet
+
+# Models (will be mounted from EC2)
+models/
+
+# Notebooks
+notebooks/
+*.ipynb
+
+# Outputs
+outputs/
 mlruns/
 mlartifacts/
-catboost_info/
-outputs/
+
+# Documentation
+*.md
+README.md
+
+# Docker
+docker-compose*.yml
+Dockerfile
+
+# Airflow
+dags/
+dags_disabled/
+plugins/
+include/
+packages.txt
+airflow_settings.yaml
+
+# Monitoring
+monitoring/
+
+# Tests
+tests/
+*.sh
+*.py
+!app/*.py
+
+# Misc
 *.png
 *.jpg
-.env
-.pytest_cache/
-*.ipynb_checkpoints/
+*.jpeg
+catboost_info/
+.DS_Store
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+check_*.py
+compare_*.py
+generate_*.py
+show_*.py
+start_*.py
+test_*.py
+verify_*.py
+deploy_*.sh
+upload_*.sh
+*_DEPLOYMENT*.md
+*_GUIDE.md
+api_test_info.txt
