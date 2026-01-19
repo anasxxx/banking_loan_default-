@@ -28,7 +28,7 @@ jobs:
           ls -lh models/production/feature_names.json || echo "Feature names file not found"
       
       - name: Upload model files to EC2
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -39,16 +39,14 @@ jobs:
           rm: false
           strip_components: 0
           overwrite: true
-          timeout: 300s
       
       - name: Fix permissions and restart container
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          timeout: 300s
           script: |
             set -e
             echo "=========================================="
