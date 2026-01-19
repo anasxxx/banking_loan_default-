@@ -10,12 +10,14 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Model configuration
-MODEL_PATH = 'models/production/lightgbm_full_optimized.pkl'
+MODEL_PATH = 'models/production/lightgbm_smote_high_performance.pkl'
+METRICS_PATH = 'models/production/metrics_smote_high_performance.json'
+THRESHOLD_PATH = 'models/production/optimal_threshold_smote.json'
 
 # API configuration
 API_TITLE = "Loan Default Prediction API"
 API_DESCRIPTION = """
-Predict loan default risk using machine learning with enhanced features.
+Predict loan default risk using machine learning.
 
 ## Features
 
@@ -26,12 +28,13 @@ Predict loan default risk using machine learning with enhanced features.
 
 ## Model Performance
 
-* AUC-ROC: 0.79+ (optimized with 500 Optuna trials)
-* Features: 361 (including aggregations from 7 data tables)
-* Algorithm: LightGBM with Optuna-optimized hyperparameters
-* Training: Full dataset with enhanced feature engineering
+* AUC-ROC: 91.6%
+* Precision: 87.4%
+* Recall: 92.17%
+* F1-Score: 90.0%
+* Algorithm: LightGBM with SMOTE oversampling and Optuna-optimized hyperparameters
 """
-API_VERSION = "2.0.0"
+API_VERSION = "1.0.0"
 
 # Risk thresholds
 RISK_THRESHOLD_LOW = 0.3
