@@ -1,0 +1,105 @@
+name: Force Restart API with Model
+
+on:
+  workflow_dispatch:
+
+jobs:
+  force-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Force stop and restart API
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "STEP 1: Verify files exist on EC2"
+            echo "=========================================="
+            ls -lah ~/models/production/ || exit 1
+            
+            if [ ! -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
+              echo "✗ ERROR: Model file NOT FOUND on EC2!"
+              exit 1
+            fi
+            
+            echo "✓ Model file exists: $(ls -lh ~/models/production/lightgbm_smote_high_performance.pkl)"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 2: Stop ALL containers"
+            echo "=========================================="
+            docker stop $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to stop"
+            sleep 3
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 3: Remove ALL containers"
+            echo "=========================================="
+            docker rm -f $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to remove"
+            sleep 2
+            
+            # Make absolutely sure
+            docker ps -a | grep loan-api
+            if [ $? -eq 0 ]; then
+              echo "Force removing remaining containers..."
+              docker rm -f $(docker ps -a | grep loan-api | awk '{print $1}') 2>&1 || true
+              sleep 2
+            fi
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 4: Get absolute path"
+            echo "=========================================="
+            MODELS_ABS=$(cd ~/models && pwd)
+            echo "Models absolute path: $MODELS_ABS"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 5: Start new container with ABSOLUTE path"
+            echo "=========================================="
+            docker run -d -p 8000:8000 \
+              -v $MODELS_ABS:/app/models:ro \
+              --name loan-api \
+              --restart unless-stopped \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 6: Wait for startup (30 seconds)"
+            echo "=========================================="
+            sleep 30
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 7: Check container status"
+            echo "=========================================="
+            docker ps | grep loan-api || echo "Container not running!"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 8: Show container logs"
+            echo "=========================================="
+            docker logs loan-api --tail 50 2>&1
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 9: Verify model in container"
+            echo "=========================================="
+            docker exec loan-api ls -la /app/models/production/ 2>&1 || echo "Cannot exec"
+            docker exec loan-api test -f /app/models/production/lightgbm_smote_high_performance.pkl && echo "✓ Model accessible" || echo "✗ Model NOT accessible"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 10: Test API"
+            echo "=========================================="
+            sleep 5
+            curl -s http://localhost:8000/health | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/health
+            echo ""
+            curl -s http://localhost:8000/model/info | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/model/info
