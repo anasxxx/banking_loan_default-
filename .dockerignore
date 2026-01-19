@@ -50,11 +50,9 @@ monitoring/
 
 # Tests
 tests/
-*.sh
 
-# Exclude Python files but include app/*.py
-*.py
-!app/*.py
+# Shell scripts
+*.sh
 
 # Misc
 *.png
@@ -65,7 +63,7 @@ catboost_info/
 .vscode/
 .idea/
 
-# Temporary files
+# Temporary files (root level only)
 *.tmp
 *.log
 check_*.py
@@ -73,7 +71,6 @@ compare_*.py
 generate_*.py
 show_*.py
 start_*.py
-test_*.py
 verify_*.py
 deploy_*.sh
 upload_*.sh
