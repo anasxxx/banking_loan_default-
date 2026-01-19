@@ -46,15 +46,17 @@ jobs:
               exit 1
             fi
             
-            docker restart loan-api || docker start loan-api || {
-              echo "Container not found, starting new one..."
-              docker run -d -p 8000:8000 \
-                -v ~/models:/app/models \
-                -v ~/data:/app/data \
-                --name loan-api \
-                --restart unless-stopped \
-                ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
-            }
+            echo "Stopping and removing old container..."
+            docker stop loan-api 2>&1 || echo "Container not running"
+            docker rm loan-api 2>&1 || echo "Container not found"
+            
+            echo "Starting new container with proper volume mounts..."
+            docker run -d -p 8000:8000 \
+              -v ~/models:/app/models \
+              -v ~/data:/app/data \
+              --name loan-api \
+              --restart unless-stopped \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
             
             sleep 20
             docker logs loan-api --tail 50
