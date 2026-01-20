@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          lfs: true
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -31,6 +33,24 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
       
+      - name: Upload model files to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST "mkdir -p ~/models/production"
+          
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/lightgbm_smote_high_performance.pkl $EC2_USER@$EC2_HOST:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/metrics_smote_high_performance.json $EC2_USER@$EC2_HOST:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/optimal_threshold_smote.json $EC2_USER@$EC2_HOST:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/feature_names.json $EC2_USER@$EC2_HOST:~/models/production/
+      
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -38,8 +58,53 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+            
+            # Stop and remove existing container
             docker stop loan-api || true
             docker rm loan-api || true
+            
+            # Get absolute path for models directory
+            MODELS_ABS=$(cd ~/models && pwd)
+            echo "Models directory: $MODELS_ABS"
+            
+            # Verify model files exist
+            if [ ! -f "$MODELS_ABS/production/lightgbm_smote_high_performance.pkl" ]; then
+              echo "ERROR: Model file not found at $MODELS_ABS/production/"
+              exit 1
+            fi
+            
+            # Pull latest image
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
-            docker run -d -p 8000:8000 -v ~/banking_loan_default-/models:/app/models --name loan-api ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+            
+            # Start container with correct volume mount
+            docker run -d \
+              -p 8000:8000 \
+              -v "$MODELS_ABS:/app/models:ro" \
+              --name loan-api \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+            
+            # Wait for container to start
+            sleep 10
+            
+            # Verify container is running
+            if ! docker ps | grep -q loan-api; then
+              echo "ERROR: Container failed to start"
+              docker logs loan-api
+              exit 1
+            fi
+            
+            # Wait for model to load
+            sleep 20
+            
+            # Check if model loaded successfully
+            HEALTH=$(curl -s http://localhost:8000/health || echo "{}")
+            if echo "$HEALTH" | grep -q '"model_loaded":true'; then
+              echo "✓ Model loaded successfully"
+            else
+              echo "WARNING: Model may not be loaded. Container logs:"
+              docker logs loan-api | tail -30
+            fi
+            
+            # Clean up old images
             docker image prune -f
