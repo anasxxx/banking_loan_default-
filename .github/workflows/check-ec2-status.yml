@@ -1,0 +1,70 @@
+name: Check EC2 Status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check EC2 Status
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=========================================="
+            echo "EC2 Instance Status"
+            echo "=========================================="
+            echo "Current IP:"
+            curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo "Cannot get IP"
+            echo ""
+            
+            echo "=========================================="
+            echo "Docker Status"
+            echo "=========================================="
+            echo "Running containers:"
+            docker ps
+            echo ""
+            
+            echo "All containers (including stopped):"
+            docker ps -a
+            echo ""
+            
+            echo "=========================================="
+            echo "Port 8000 Status"
+            echo "=========================================="
+            echo "What's listening on port 8000:"
+            sudo netstat -tlnp | grep 8000 || echo "Nothing on port 8000"
+            echo ""
+            
+            echo "Docker containers on port 8000:"
+            docker ps --filter "publish=8000" || echo "No Docker container on port 8000"
+            echo ""
+            
+            echo "=========================================="
+            echo "Model Files"
+            echo "=========================================="
+            echo "Checking ~/models/production/:"
+            ls -lah ~/models/production/ 2>/dev/null || echo "Directory not found"
+            echo ""
+            
+            echo "=========================================="
+            echo "Container Logs (if exists)"
+            echo "=========================================="
+            if docker ps -a | grep -q loan-api; then
+              echo "loan-api container logs (last 30 lines):"
+              docker logs loan-api 2>&1 | tail -30
+            else
+              echo "No loan-api container found"
+            fi
+            echo ""
+            
+            echo "=========================================="
+            echo "Test API from Inside EC2"
+            echo "=========================================="
+            echo "Testing localhost:8000/health:"
+            curl -s http://localhost:8000/health || echo "Connection failed"
+            echo ""
