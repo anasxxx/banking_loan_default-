@@ -204,21 +204,33 @@ jobs:
             
             echo ""
             echo "=========================================="
-            echo "STEP 6: Wait for container to start"
+            echo "STEP 6: Check container immediately"
             echo "=========================================="
-            sleep 30
+            sleep 5
+            docker ps -a | grep loan-api || echo "Container not found at all!"
             
             echo ""
             echo "=========================================="
-            echo "STEP 7: Check container status"
+            echo "STEP 7: Check container logs (even if exited)"
             echo "=========================================="
-            docker ps | grep loan-api || echo "Container not running!"
+            CONTAINER_ID=$(docker ps -a | grep loan-api | awk '{print $1}' | head -1)
+            if [ -n "$CONTAINER_ID" ]; then
+              echo "Container ID: $CONTAINER_ID"
+              echo "Container status:"
+              docker ps -a | grep loan-api
+              echo ""
+              echo "Full container logs:"
+              docker logs $CONTAINER_ID 2>&1 || docker logs loan-api 2>&1
+            else
+              echo "Cannot find container to check logs"
+            fi
             
             echo ""
             echo "=========================================="
-            echo "STEP 8: Check container logs (FULL)"
+            echo "STEP 8: Wait longer and check again"
             echo "=========================================="
-            docker logs loan-api 2>&1 | tail -100
+            sleep 25
+            docker ps | grep loan-api && echo "✓ Container is running!" || echo "✗ Container is NOT running"
             
             echo ""
             echo "=========================================="
