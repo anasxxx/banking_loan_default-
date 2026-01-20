@@ -124,11 +124,12 @@ jobs:
             echo "=========================================="
             echo "STEP 5: Start fresh container"
             echo "=========================================="
-            docker run -d -p 8000:8000 \
+            CONTAINER_ID=$(docker run -d -p 8000:8000 \
               -v $MODELS_ABS:/app/models:ro \
               --name loan-api \
               --restart unless-stopped \
-              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest)
+            echo "Container ID: $CONTAINER_ID"
             
             echo ""
             echo "=========================================="
@@ -139,9 +140,14 @@ jobs:
             
             echo ""
             echo "=========================================="
-            echo "STEP 7: Show container logs"
+            echo "STEP 7: Show container logs (from ID)"
             echo "=========================================="
-            docker logs loan-api --tail 50 2>&1
+            # Try to get logs from the container ID (works even if crashed)
+            docker logs $CONTAINER_ID 2>&1 || echo "Cannot get logs from $CONTAINER_ID"
+            # Also try by name
+            docker logs loan-api 2>&1 || echo "Cannot get logs by name"
+            # Check all containers (including stopped)
+            docker ps -a | grep loan-api || echo "No container found"
             
             echo ""
             echo "=========================================="
