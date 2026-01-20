@@ -1,0 +1,92 @@
+name: Restart API Container
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Restart API Container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "Current Container Status"
+            echo "=========================================="
+            docker ps -a | grep loan-api || echo "No loan-api container found"
+            echo ""
+            
+            echo "=========================================="
+            echo "Stopping and Removing Container"
+            echo "=========================================="
+            docker stop loan-api || true
+            docker rm loan-api || true
+            sleep 2
+            
+            echo "=========================================="
+            echo "Checking Model Files"
+            echo "=========================================="
+            MODELS_ABS=$(cd ~/models && pwd)
+            echo "Models directory: $MODELS_ABS"
+            ls -lah $MODELS_ABS/production/ || echo "ERROR: Model files not found!"
+            echo ""
+            
+            echo "=========================================="
+            echo "Starting Container"
+            echo "=========================================="
+            docker run -d \
+              -p 8000:8000 \
+              -v "$MODELS_ABS:/app/models:ro" \
+              --name loan-api \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+            
+            echo "Container started. Waiting 10 seconds..."
+            sleep 10
+            
+            echo "=========================================="
+            echo "Container Status"
+            echo "=========================================="
+            docker ps | grep loan-api || echo "ERROR: Container not running!"
+            echo ""
+            
+            echo "=========================================="
+            echo "Port 8000 Status"
+            echo "=========================================="
+            sudo netstat -tlnp | grep 8000 || echo "WARNING: Nothing listening on port 8000"
+            echo ""
+            
+            echo "=========================================="
+            echo "Container Logs (last 20 lines)"
+            echo "=========================================="
+            docker logs loan-api 2>&1 | tail -20
+            echo ""
+            
+            echo "=========================================="
+            echo "Waiting for Model to Load (30 seconds)"
+            echo "=========================================="
+            sleep 30
+            
+            echo "=========================================="
+            echo "Testing API"
+            echo "=========================================="
+            echo "Health check:"
+            curl -s http://localhost:8000/health || echo "FAILED"
+            echo ""
+            
+            echo "Model info:"
+            curl -s http://localhost:8000/model/info | head -20 || echo "FAILED"
+            echo ""
+            
+            echo "=========================================="
+            echo "Public IP"
+            echo "=========================================="
+            PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+            echo "API URL: http://$PUBLIC_IP:8000/health"
+            echo ""
