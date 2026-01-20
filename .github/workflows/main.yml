@@ -106,5 +106,19 @@ jobs:
               docker logs loan-api | tail -30
             fi
             
+            # Verify container is still running and show status
+            echo ""
+            echo "=========================================="
+            echo "Final Container Status"
+            echo "=========================================="
+            docker ps | grep loan-api || echo "WARNING: Container not running!"
+            echo ""
+            echo "Port 8000 status:"
+            sudo netstat -tlnp | grep 8000 || echo "Nothing listening on port 8000"
+            echo ""
+            echo "Public IP for testing:"
+            curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo "Cannot get IP"
+            echo ""
+            
             # Clean up old images
             docker image prune -f
