@@ -72,12 +72,45 @@ jobs:
             echo "=========================================="
             echo "STEP 3: Remove ALL containers completely"
             echo "=========================================="
-            # Remove all loan-api containers
-            docker rm -f $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to remove"
+            # Remove all loan-api containers by name
+            docker rm -f $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to remove by name"
             sleep 2
             
+            # Also get containers by ID if they're on port 8000
+            PORT_CONTAINER_IDS=$(docker ps -aq --filter "publish=8000" || true)
+            if [ -n "$PORT_CONTAINER_IDS" ]; then
+              echo "Removing containers on port 8000: $PORT_CONTAINER_IDS"
+              docker rm -f $PORT_CONTAINER_IDS 2>&1 || true
+              sleep 2
+            fi
+            
+            # Check for any remaining loan-api containers and remove by ID
+            REMAINING=$(docker ps -aq --filter "name=loan-api" 2>/dev/null || true)
+            if [ -n "$REMAINING" ]; then
+              echo "Force removing remaining containers: $REMAINING"
+              docker rm -f $REMAINING 2>&1 || true
+              sleep 2
+            fi
+            
+            # Final check - get ALL containers and remove any that match
+            ALL_LOAN_API=$(docker ps -a --format "{{.ID}} {{.Names}}" | grep loan-api | awk '{print $1}' || true)
+            if [ -n "$ALL_LOAN_API" ]; then
+              echo "Final cleanup - removing: $ALL_LOAN_API"
+              docker rm -f $ALL_LOAN_API 2>&1 || true
+              sleep 2
+            fi
+            
             # Verify all are removed
-            docker ps -a | grep loan-api && echo "WARNING: Some containers still exist!" || echo "✓ All containers removed"
+            FINAL_CHECK=$(docker ps -a | grep loan-api || true)
+            if [ -z "$FINAL_CHECK" ]; then
+              echo "✓ All containers removed"
+            else
+              echo "WARNING: Some containers still exist:"
+              echo "$FINAL_CHECK"
+              echo "Force removing all of them..."
+              docker ps -a | grep loan-api | awk '{print $1}' | xargs docker rm -f 2>&1 || true
+              sleep 2
+            fi
             
             echo ""
             echo "=========================================="
