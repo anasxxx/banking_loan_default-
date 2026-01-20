@@ -1,0 +1,141 @@
+name: Fix Model Loading - DEFINITIVE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  fix-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          lfs: true
+          fetch-depth: 0
+      
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      
+      - name: Upload model files
+        run: |
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p ~/models/production"
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/lightgbm_smote_high_performance.pkl ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/metrics_smote_high_performance.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/optimal_threshold_smote.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no models/production/feature_names.json ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/models/production/
+      
+      - name: Clean up and restart container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "STEP 1: Verify files exist"
+            echo "=========================================="
+            ls -lah ~/models/production/ || exit 1
+            if [ ! -f ~/models/production/lightgbm_smote_high_performance.pkl ]; then
+              echo "✗ ERROR: Model file NOT FOUND!"
+              exit 1
+            fi
+            echo "✓ Model file exists"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 2: Stop ALL containers on port 8000"
+            echo "=========================================="
+            # Get all containers using port 8000
+            PORT_CONTAINERS=$(docker ps --filter "publish=8000" --format "{{.ID}}" || true)
+            if [ -n "$PORT_CONTAINERS" ]; then
+              echo "Found containers on port 8000: $PORT_CONTAINERS"
+              docker stop $PORT_CONTAINERS || true
+            fi
+            
+            # Stop all loan-api containers
+            docker stop $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to stop"
+            sleep 3
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 3: Remove ALL containers completely"
+            echo "=========================================="
+            # Remove all loan-api containers
+            docker rm -f $(docker ps -aq --filter "name=loan-api") 2>&1 || echo "No containers to remove"
+            sleep 2
+            
+            # Verify all are removed
+            docker ps -a | grep loan-api && echo "WARNING: Some containers still exist!" || echo "✓ All containers removed"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 4: Get absolute paths"
+            echo "=========================================="
+            MODELS_ABS=$(cd ~/models && pwd)
+            echo "Models path: $MODELS_ABS"
+            ls -lah $MODELS_ABS/production/ | head -5
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 5: Start fresh container"
+            echo "=========================================="
+            docker run -d -p 8000:8000 \
+              -v $MODELS_ABS:/app/models:ro \
+              --name loan-api \
+              --restart unless-stopped \
+              ${{ secrets.DOCKERHUB_USERNAME }}/loan-api:latest
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 6: Wait and check status"
+            echo "=========================================="
+            sleep 5
+            docker ps | grep loan-api || echo "Container not running!"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 7: Show container logs"
+            echo "=========================================="
+            docker logs loan-api --tail 50 2>&1
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 8: Verify model in container"
+            echo "=========================================="
+            docker exec loan-api ls -la /app/models/production/ 2>&1 || echo "Cannot access container"
+            docker exec loan-api test -f /app/models/production/lightgbm_smote_high_performance.pkl && echo "✓ Model file accessible" || echo "✗ Model file NOT accessible"
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 9: Wait for model to load (30 seconds)"
+            echo "=========================================="
+            sleep 30
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 10: Test API endpoints"
+            echo "=========================================="
+            echo "Health check:"
+            curl -s http://localhost:8000/health | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/health
+            echo ""
+            echo "Model info:"
+            curl -s http://localhost:8000/model/info | python3 -m json.tool 2>&1 || curl -s http://localhost:8000/model/info
+            
+            echo ""
+            echo "=========================================="
+            echo "STEP 11: Check container status"
+            echo "=========================================="
+            docker ps | grep loan-api || echo "Container stopped!"
+            docker logs loan-api --tail 20 2>&1
